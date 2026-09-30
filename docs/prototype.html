@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niger Delta Environmental Risk Observatory</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #111; color: #eee; }
+  
+  #header {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+    background: linear-gradient(180deg, rgba(17,17,17,0.95) 60%, transparent);
+    padding: 12px 20px;
+  }
+  #header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+  #header span { color: #888; font-size: 12px; }
+  
+  #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
+  
+  #legend {
+    position: absolute; bottom: 30px; right: 15px; z-index: 10;
+    background: rgba(17,17,17,0.85); border-radius: 8px; padding: 12px 14px;
+    border: 1px solid #333; min-width: 160px;
+  }
+  #legend h4 { font-size: 11px; color: #888; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3); flex-shrink: 0; }
+  
+  #stats {
+    position: absolute; bottom: 30px; left: 15px; z-index: 10;
+    background: rgba(17,17,17,0.85); border-radius: 8px; padding: 12px 16px;
+    border: 1px solid #333; display: flex; gap: 24px;
+  }
+  .stat { text-align: center; }
+  .stat-value { font-size: 20px; font-weight: 700; color: #fff; }
+  .stat-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.3px; }
+  
+  .popup-content { color: #111; }
+  .popup-content h3 { font-size: 14px; margin-bottom: 4px; }
+  .popup-content p { font-size: 12px; margin: 2px 0; }
+  
+  @media (max-width: 640px) {
+    #stats { flex-wrap: wrap; gap: 12px; padding: 10px 14px; }
+    .stat-value { font-size: 16px; }
+    #legend { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>Niger Delta Environmental Risk Observatory</h1>
+  <span>Oil spills · Gas flaring · Environmental change · Built from Port Harcourt</span>
+</div>
+
+<div id="map"></div>
+
+<div id="legend">
+  <h4>Spill size (barrels)</h4>
+  <div class="legend-item"><span class="legend-dot" style="width:6px;height:6px;background:#ff6b35;"></span> &lt;10</div>
+  <div class="legend-item"><span class="legend-dot" style="width:10px;height:10px;background:#ff6b35;"></span> 10–500</div>
+  <div class="legend-item"><span class="legend-dot" style="width:16px;height:16px;background:#ff6b35;"></span> &gt;500</div>
+  <div style="margin-top:8px;"><span class="legend-dot" style="background:#ff6b35;"></span> Oil</div>
+  <div><span class="legend-dot" style="background:#4ecdc4;"></span> Condensate</div>
+</div>
+
+<div id="stats">
+  <div class="stat"><div class="stat-value" id="stat-count">0</div><div class="stat-label">Spills</div></div>
+  <div class="stat"><div class="stat-value" id="stat-spilled">0</div><div class="stat-label">Barrels spilled</div></div>
+  <div class="stat"><div class="stat-value" id="stat-recovered">0</div><div class="stat-label">% recovered</div></div>
+</div>
+
+<script>
+// ── Load sample data ──────────────────────────────────────────────────────
+// In production, this loads from /api/spills or a static GeoJSON file.
+// For demo, we use a hardcoded sample with a few Niger Delta spill locations.
+
+const SAMPLE_SPILLS = {
+  "type": "FeatureCollection",
+  "features": [
+    { "type":"Feature", "geometry":{"type":"Point","coordinates":[7.05,4.82]}, "properties":{"id":"SPL-001","date":"2025-01-15","state":"Rivers","company":"Shell","cause":"Equipment failure","qty":45.5,"rec":32.1,"type":"crude","impact":"land"} },
+    { "type":"Feature", "geometry":{"type":"Point","coordinates":[6.45,4.45]}, "properties":{"id":"SPL-002","date":"2025-02-03","state":"Bayelsa","company":"AGIP","cause":"Pipeline corrosion","qty":120.0,"rec":15.0,"type":"crude","impact":"water"} },
+    { "type":"Feature", "geometry":{"type":"Point","coordinates":[5.80,5.90]}, "properties":{"id":"SPL-003","date":"2025-03-11","state":"Delta","company":"Chevron","cause":"Sabotage","qty":200.0,"rec":0.0,"type":"condensate","impact":"mangrove"} },
+    { "type":"Feature", "geometry":{"type":"Point","coordinates":[7.40,4.10]}, "properties":{"id":"SPL-004","date":"2025-03-22","state":"Akwa Ibom","company":"Mobil","cause":"Illegal bunkering","qty":5000.0,"rec":120.0,"type":"crude","impact":"water"} },
+    { "type":"Feature", "geometry":{"type":"Point","coordinates":[7.00,5.00]}, "properties":{"id":"SPL-005","date":"2025-04-10","state":"Rivers","company":"Total","cause":"Third party damage","qty":15.0,"rec":14.0,"type":"crude","impact":"land"} },
+    { "type":"Feature", "geometry":{"type":"Point","coordinates":[6.20,4.60]}, "properties":{"id":"SPL-006","date":"2024-11-20","state":"Bayelsa","company":"AGIP","cause":"Equipment failure","qty":85.0,"rec":40.0,"type":"crude","impact":"land"} },
+  ]
+};
+
+// ── Map initialization ────────────────────────────────────────────────────
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://demotiles.maplibre.org/style.json',
+  center: [6.5, 5.2],
+  zoom: 7,
+  maxBounds: [[2.0, 3.0], [15.0, 14.0]],
+});
+
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
+
+map.on('load', () => {
+  map.addSource('spills', {
+    type: 'geojson',
+    data: SAMPLE_SPILLS,
+    cluster: true,
+    clusterMaxZoom: 12,
+    clusterRadius: 40,
+  });
+
+  // Clusters
+  map.addLayer({
+    id: 'spill-clusters',
+    type: 'circle',
+    source: 'spills',
+    filter: ['has', 'point_count'],
+    paint: {
+      'circle-color': ['step', ['get', 'point_count'], '#ff6b35', 5, '#e83939', 15, '#b31d1d'],
+      'circle-radius': ['step', ['get', 'point_count'], 18, 5, 24, 15, 30],
+      'circle-opacity': 0.7,
+      'circle-stroke-width': 2,
+      'circle-stroke-color': '#fff',
+    },
+  });
+
+  map.addLayer({
+    id: 'cluster-count',
+    type: 'symbol',
+    source: 'spills',
+    filter: ['has', 'point_count'],
+    layout: {
+      'text-field': ['get', 'point_count_abbreviated'],
+      'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+      'text-size': 13,
+    },
+    paint: { 'text-color': '#fff' },
+  });
+
+  // Individual spills
+  map.addLayer({
+    id: 'spill-points',
+    type: 'circle',
+    source: 'spills',
+    filter: ['!', ['has', 'point_count']],
+    paint: {
+      'circle-color': ['match', ['get', 'type'], 'condensate', '#4ecdc4', '#ff6b35'],
+      'circle-radius': [
+        'case',
+        ['<=', ['get', 'qty'], 10], 6,
+        ['<=', ['get', 'qty'], 500], 10,
+        16,
+      ],
+      'circle-opacity': 0.8,
+      'circle-stroke-width': 1.5,
+      'circle-stroke-color': '#fff',
+    },
+  });
+
+  // Popup
+  const popup = new maplibregl.Popup({ offset: 24, closeButton: true });
+
+  map.on('click', 'spill-points', (e) => {
+    const p = e.features[0].properties;
+    const recPct = p.qty > 0 ? ((p.rec / p.qty) * 100).toFixed(1) : '0.0';
+    popup.setLngLat(e.lngLat).setHTML(`
+      <div class="popup-content">
+        <h3>${p.id}</h3>
+        <p><strong>Date:</strong> ${p.date}</p>
+        <p><strong>State:</strong> ${p.state}</p>
+        <p><strong>Company:</strong> ${p.company}</p>
+        <p><strong>Cause:</strong> ${p.cause}</p>
+        <p><strong>Spilled:</strong> ${p.qty.toLocaleString()} bbl</p>
+        <p><strong>Recovered:</strong> ${p.rec.toLocaleString()} bbl (${recPct}%)</p>
+        <p><strong>Impact area:</strong> ${p.impact}</p>
+      </div>
+    `).addTo(map);
+  });
+
+  map.on('mouseenter', 'spill-points', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'spill-points', () => { map.getCanvas().style.cursor = ''; });
+
+  // Stats
+  const features = SAMPLE_SPILLS.features;
+  document.getElementById('stat-count').textContent = features.length;
+  const totalSpilled = features.reduce((s, f) => s + (f.properties.qty || 0), 0);
+  const totalRecovered = features.reduce((s, f) => s + (f.properties.rec || 0), 0);
+  document.getElementById('stat-spilled').textContent = totalSpilled.toLocaleString();
+  document.getElementById('stat-recovered').textContent = totalSpilled > 0 ? ((totalRecovered / totalSpilled) * 100).toFixed(0) + '%' : '0%';
+});
+</script>
+</body>
+</html>

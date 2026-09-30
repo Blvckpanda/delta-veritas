@@ -1,0 +1,46 @@
+# ── Virtual environments ─────────────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Python caches ────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ── Generated pipeline outputs (regenerable — never commit) ──────────────
+data/processed/
+data/observatory.db
+data/*.db
+
+# ── Logs (append-only at runtime, not source) ────────────────────────────
+logs/*.log
+logs/*.log.*
+
+# ── Environment / secrets ────────────────────────────────────────────────
+.env
+.env.*
+*.env
+
+# ── OS / editor noise ────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+
+# ── Node (future frontend) ───────────────────────────────────────────────
+node_modules/
+.next/
+
+# ── Tool state (agent sandboxes etc.) ────────────────────────────────────
+.hermes/
+.freebuff/
+
+# NOTE: data/raw/*.json is deliberately NOT ignored — those are the
+# canonical source fixtures the ETL pipeline is validated against.

@@ -1,0 +1,137 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {"type": "Point", "coordinates": [7.05, 4.82]},
+      "properties": {
+        "incident_id": "NOSDRA-2025-001",
+        "date": "2025-01-15",
+        "state": "Rivers",
+        "lga": "Port Harcourt",
+        "community": "Trans Amadi",
+        "company": "Shell Petroleum Dev Co",
+        "cause": "Equipment failure",
+        "spill_type": "crude oil",
+        "quantity_spilled": 45.5,
+        "quantity_recovered": 32.1,
+        "impact_area": "land",
+        "jiv_date": "2025-01-20",
+        "latitude": 4.82,
+        "longitude": 7.05,
+        "status": "valid",
+        "contaminant": "oil"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {"type": "Point", "coordinates": [6.45, 4.45]},
+      "properties": {
+        "incident_id": "NOSDRA-2025-002",
+        "date": "2025-02-03",
+        "state": "Bayelsa",
+        "lga": "Brass",
+        "community": "Okpoama",
+        "company": "AGIP",
+        "cause": "Pipeline corrosion",
+        "spill_type": "crude oil",
+        "quantity_spilled": 120.0,
+        "quantity_recovered": 15.0,
+        "impact_area": "water",
+        "jiv_date": "2025-02-08",
+        "latitude": 4.45,
+        "longitude": 6.45,
+        "status": "valid",
+        "contaminant": "oil"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {"type": "Point", "coordinates": [5.8, 5.9]},
+      "properties": {
+        "incident_id": "NOSDRA-2025-003",
+        "date": "11/03/2025",
+        "state": "Delta",
+        "lga": "Warri South",
+        "community": "Ugborodo",
+        "company": "Chevron Nigeria Ltd",
+        "cause": "Sabotage",
+        "spill_type": "condensate",
+        "quantity_spilled": 200.0,
+        "quantity_recovered": 0.0,
+        "impact_area": "mangrove",
+        "jiv_date": "",
+        "latitude": 5.9,
+        "longitude": 5.8,
+        "status": "valid",
+        "contaminant": "oil"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {"type": "Point", "coordinates": [7.4, 4.1]},
+      "properties": {
+        "incident_id": "NOSDRA-2025-004",
+        "date": "2025-03-22",
+        "state": "Akwa Ibom",
+        "lga": "Ibeno",
+        "community": "Iwokpom",
+        "company": "Mobil Producing Nigeria",
+        "cause": "Sabotage - illegal bunkering",
+        "spill_type": "crude oil",
+        "quantity_spilled": 5000.0,
+        "quantity_recovered": 120.0,
+        "impact_area": "water",
+        "jiv_date": "2025-03-28",
+        "latitude": 4.1,
+        "longitude": 7.4,
+        "status": "valid",
+        "contaminant": "oil"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": null,
+      "properties": {
+        "incident_id": "NOSDRA-2025-005",
+        "date": "15-Mar-2025",
+        "state": "Rivers",
+        "lga": "Ogba/Egbema/Ndoni",
+        "community": "Omoku",
+        "company": "NPDC",
+        "cause": "Wellhead failure",
+        "spill_type": "crude oil",
+        "quantity_spilled": 15.0,
+        "quantity_recovered": 14.0,
+        "impact_area": "land",
+        "jiv_date": "2025-03-30",
+        "latitude": null,
+        "longitude": null,
+        "status": "valid",
+        "contaminant": "oil"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {"type": "Point", "coordinates": [7.0, 5.0]},
+      "properties": {
+        "incident_id": "NOSDRA-2025-006",
+        "date": "not-a-date",
+        "state": "Rivers",
+        "lga": "Etche",
+        "community": "Egwi",
+        "company": "Total E&P",
+        "cause": "Third party damage",
+        "spill_type": "crude oil",
+        "quantity_spilled": -1.0,
+        "quantity_recovered": 0.0,
+        "impact_area": "land",
+        "jiv_date": "",
+        "latitude": 5.0,
+        "longitude": 7.0,
+        "status": "valid",
+        "contaminant": "oil"
+      }
+    }
+  ]
+}
