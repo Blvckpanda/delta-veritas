@@ -7,6 +7,7 @@ An interactive geospatial dashboard mapping environmental risk, oil spill histor
 ## What this project does
 
 - Maps **NOSDRA oil spill incidents** (2010–2026) — location, cause, volume, company, remediation status
+- Publishes a **data-quality scorecard** auditing the official record — completeness, duplicates, volume plausibility, JIV lag, suspicious-recovery claims ([export guide](docs/nosdra-export-guide.md))
 - Visualises **VIIRS gas flaring** intensity and trends over time
 - Tracks **NDDC/NEITI development disclosures** and Host Community trust fund allocation
 - Shows **land-use change** via Sentinel-2 satellite imagery
@@ -50,7 +51,7 @@ This ethical boundary is intentional. The project focuses on **environmental ris
 
 ## Status
 
-**Phases 0–2 complete** — repo, NOSDRA ETL pipeline (tested), OSM context layer + static portfolio map, FastAPI serving layer. Next: Phase 3 (VIIRS gas flaring pipeline).
+**Phases 0–2 complete** — repo, NOSDRA ETL pipeline (tested), OSM context layer + static portfolio map, FastAPI serving layer (tested end-to-end), data-quality scorecard. Next: Phase 3 (VIIRS gas flaring pipeline).
 
 ## License
 

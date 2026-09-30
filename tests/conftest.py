@@ -9,8 +9,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # Make both import styles available:
 #   `import config` / `from nosdra_pipeline import ...`  (src/etl modules)
+#   `from quality_scorecard import ...`                  (src/analysis modules)
 #   `from src.api.main import app`                       (project-root packages)
-for _p in (ROOT / "src" / "etl", ROOT):
+for _p in (ROOT / "src" / "etl", ROOT / "src" / "analysis", ROOT):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 

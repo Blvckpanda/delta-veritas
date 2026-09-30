@@ -66,6 +66,8 @@
 | 2026-07-30 | Road sampling (500/6914) and settlement sampling (200/3455) | Full resolution crashes SVG/matplotlib; sample sufficient for cartographic context |
 | 2026-09-30 | First commit hygiene pass: .gitignore, MIT LICENSE, requirements.txt corrected to actual imports, docs↔code alignment, data_source field added to ETL output, pytest suite for parsers + edge fixtures | Repo had zero commits and no tests; docs claimed a stack the code didn't have. Truthful baseline before Phase 3 |
 | 2026-09-30 | Deferred deps (geopandas, rasterio, pystac-client, stackstac, fiona, pyarrow, folium, h5py) moved to commented section of requirements.txt | Nothing imports them yet — they get re-promoted by the phase that first does (Phase 3) |
+| 2026-10-01 | Data-quality scorecard is the flagship analysis artifact (`src/analysis/quality_scorecard.py`) | Independent audit of the official record — nobody else publishes systematic QC of NOSDRA data; methodology caveat (audits the record, not ground truth) is rendered into every output |
+| 2026-10-01 | API tests isolate via OBSERVATORY_DATABASE_URL + NullPool; idempotent best-effort migrations add data_source to existing DBs | Tests must never write data/observatory.db; aiosqlite connections are loop-bound so pools break across asyncio.run/TestClient loops |
 
 ## Open Questions
 

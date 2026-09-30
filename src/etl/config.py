@@ -101,6 +101,19 @@ MAX_SPILL_QUANTITY = 500_000          # plausibility cap
 VALID_RECOVERY_PCT_RANGE = (0, 100)   # plausible recovery %
 
 # ── Logging ────────────────────────────────────────────────────────────────
+# ── Data-quality scorecard thresholds (src/analysis/quality_scorecard.py) ──
+# Fields whose presence defines per-record completeness and the
+# worst-year / worst-LGA ranking.
+QC_COMPLETENESS_FIELDS = (COL_LATITUDE, COL_DATE, COL_JIV_DATE)
+# A JIV (Joint Investigation Visit) more than this many days after the
+# incident is flagged as a slow/late investigation.
+QC_JIV_LAG_CAP_DAYS = 28
+# recovered/spilled ratio at or above this percentage is flagged as
+# suspicious — near-total recovery claims are a known reporting artifact.
+QC_SUSPICIOUS_RECOVERY_PCT = 99.9
+# Volume plausibility window (same bounds the ETL validates against).
+QC_VOLUME_PLAUSIBILITY = (MIN_VALID_SPILL_QUANTITY, MAX_SPILL_QUANTITY)
+
 LOG_FILE = LOGS_DIR / "etl_pipeline.log"
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
