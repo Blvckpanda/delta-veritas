@@ -1,30 +1,28 @@
 # Niger Delta Environmental Risk Observatory — Dependencies
 #
-# Policy: every requirement listed under "Active" is imported by code that
-# exists today. Anything not yet imported lives in the deferred section and
-# is re-promoted in the phase that first imports it.
+# Policy: every requirement under "Active" is imported by code that exists
+# today. Anything not yet imported lives in the deferred sections and is
+# re-promoted by the phase that first imports it (tagged inline).
 
 # ── Active: API layer (src/api/) ─────────────────────────────────────────
 fastapi>=0.110,<1
 uvicorn[standard]>=0.29,<1
 sqlalchemy>=2.0,<3
 aiosqlite>=0.20,<1
-pydantic>=2.6,<3
+pydantic>=2.6,<3          # imported by src/api/schemas/*
 
 # ── Active: ETL & analysis (src/etl/, src/analysis/) ─────────────────────
-pandas>=2.1,<3
-numpy>=1.24,<2
-matplotlib>=3.7,<4
-requests>=2.31,<3
+matplotlib>=3.7,<4        # static portfolio cartography (map_report.py)
 
-# ── Development ──────────────────────────────────────────────────────────
+# ── Active: development & testing ────────────────────────────────────────
 pytest>=8,<9
 ruff>=0.4,<1
+httpx>=0.27,<1            # FastAPI TestClient transport (tests/)
 
-# ── Deferred: Phase 3+ — NOT imported by any code yet ────────────────────
-# Uncomment in the phase that first imports them:
+# ── Deferred: Phase 3 — satellite / geospatial ───────────────────────────
+# Uncommented by the phase that first imports them:
 #
-# # Phase 3: satellite / geospatial (VIIRS, Copernicus STAC, rasters)
+# # Phase 3: VIIRS / Copernicus STAC / rasters
 # geopandas>=0.14,<1
 # shapely>=2.0,<3
 # pyarrow>=14,<18
@@ -33,8 +31,25 @@ ruff>=0.4,<1
 # pystac-client>=0.7,<1
 # stackstac>=0.5,<1
 #
-# # Analysis-phase interactivity
-# folium>=0.16,<1
+# # Phase 3/4: tabular & HTTP (promote when first imported)
+# pandas>=2.1,<3           # Phase 4 analysis over cleaned outputs
+# numpy>=1.24,<2           # raster math via stackstac output
+# requests>=2.31,<3        # if urllib clients are replaced
 #
 # # Raw VIIRS Nightfire HDF5 handling
 # h5py>=3.10,<4
+#
+# # Analysis-phase interactivity
+# folium>=0.16,<1
+
+# ── Planned tooling upgrades (recommended ladder, promote per phase) ─────
+# tenacity>=9,<10          # Phase 3 — replace hand-rolled Overpass/EOG retry
+#                          #   loops with exponential backoff + jitter
+# pydantic (above)         # Phase 4 — typed record schemas + field_validator
+#                          #   date/coord/quantity validation at ETL ingest
+# pandera>=0.20,<1         # Phase 4 — dataframe-level QC checks backing the
+#                          #   data-quality scorecard columns
+# duckdb>=1,<2             # Phase 4 — in-process analytical SQL joins over
+#                          #   Parquet (spills × flares × OSM context)
+# polars>=1,<2             # Phase 3 — Rust-backed filtering if VIIRS annual
+#                          #   CSVs outgrow csv.DictReader

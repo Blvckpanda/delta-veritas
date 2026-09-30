@@ -66,6 +66,7 @@ async def seed_from_geojson(filepath: Path):
                 jiv_date=jiv,
                 contaminant=props.get("contaminant"),
                 status=props.get("status"),
+                data_source=props.get("data_source"),
                 latitude=props.get("latitude"),
                 longitude=props.get("longitude"),
             )

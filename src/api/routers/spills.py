@@ -55,6 +55,7 @@ async def get_spills_geojson(
     cause: str | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
+    min_quantity: float | None = Query(None),
     bbox: str | None = Query(None),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -63,11 +64,15 @@ async def get_spills_geojson(
     """Get spill incidents as GeoJSON FeatureCollection."""
     filters = SpillFilters(
         year=year, state=state, company=company, cause=cause,
-        date_from=date_from, date_to=date_to, bbox=bbox,
-        limit=limit, offset=offset,
+        date_from=date_from, date_to=date_to, min_quantity=min_quantity,
+        bbox=bbox, limit=limit, offset=offset,
     )
 
     clauses = _build_filter_clauses(filters)
+
+    count_q = select(func.count(SpillIncident.id)).where(*clauses)
+    total = (await session.execute(count_q)).scalar() or 0
+
     query = (
         select(SpillIncident)
         .where(*clauses)
@@ -83,7 +88,7 @@ async def get_spills_geojson(
 
     return GeoJSONFeatureCollection(
         features=features,
-        metadata={"count": len(features), "offset": offset, "limit": limit},
+        metadata={"count": len(features), "total": total, "offset": offset, "limit": limit},
     )
 
 

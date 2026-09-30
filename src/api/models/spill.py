@@ -32,6 +32,7 @@ class SpillIncident(Base):
     jiv_date: Mapped[date | None] = mapped_column(DateTime(True), nullable=True)
     contaminant: Mapped[str | None] = mapped_column(String(50), nullable=True)
     status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    data_source: Mapped[str | None] = mapped_column(String(50), nullable=True)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -75,6 +76,7 @@ class SpillIncident(Base):
                 "jiv_date": str(self.jiv_date.date()) if self.jiv_date else None,
                 "contaminant": self.contaminant,
                 "status": self.status,
+                "data_source": self.data_source,
             },
         }
         return feature
