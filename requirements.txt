@@ -7,7 +7,7 @@
 # ── Active: API layer (src/api/) ─────────────────────────────────────────
 fastapi>=0.110,<1
 uvicorn[standard]>=0.29,<1
-sqlalchemy>=2.0,<3
+sqlalchemy[asyncio]>=2.0,<3     # [asyncio] pulls greenlet — required by src/api/database.py
 aiosqlite>=0.20,<1
 pydantic>=2.6,<3          # imported by src/api/schemas/*
 
