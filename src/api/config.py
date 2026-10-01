@@ -23,6 +23,9 @@ DATABASE_URL = os.environ.get("OBSERVATORY_DATABASE_URL") or (
     f"{Path(__file__).resolve().parent.parent.parent / 'data' / 'observatory.db'}"
 )
 
+# Static site (MapLibre prototype lives in docs/)
+DOCS_DIR = Path(__file__).resolve().parent.parent.parent / "docs"
+
 # API
 API_HOST = "0.0.0.0"
 API_PORT = 8766

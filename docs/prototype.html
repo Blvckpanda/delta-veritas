@@ -41,6 +41,12 @@
   .popup-content { color: #111; }
   .popup-content h3 { font-size: 14px; margin-bottom: 4px; }
   .popup-content p { font-size: 12px; margin: 2px 0; }
+
+  #banner {
+    position: absolute; top: 50px; left: 50%; transform: translateX(-50%);
+    z-index: 20; background: #b3261e; color: #fff; padding: 8px 16px;
+    border-radius: 6px; font-size: 13px; max-width: 90%;
+  }
   
   @media (max-width: 640px) {
     #stats { flex-wrap: wrap; gap: 12px; padding: 10px 14px; }
@@ -67,6 +73,8 @@
   <div><span class="legend-dot" style="background:#4ecdc4;"></span> Condensate</div>
 </div>
 
+<div id="banner" hidden></div>
+
 <div id="stats">
   <div class="stat"><div class="stat-value" id="stat-count">0</div><div class="stat-label">Spills</div></div>
   <div class="stat"><div class="stat-value" id="stat-spilled">0</div><div class="stat-label">Barrels spilled</div></div>
@@ -74,21 +82,47 @@
 </div>
 
 <script>
-// ── Load sample data ──────────────────────────────────────────────────────
-// In production, this loads from /api/spills or a static GeoJSON file.
-// For demo, we use a hardcoded sample with a few Niger Delta spill locations.
+// ── Load real data from the API ───────────────────────────────────────
+// The FastAPI app serves this page (same origin) at /site/prototype.html
+// and the data at /api/v1/spills/*. No hardcoded samples: what you see is
+// exactly what the ETL produced.
 
-const SAMPLE_SPILLS = {
-  "type": "FeatureCollection",
-  "features": [
-    { "type":"Feature", "geometry":{"type":"Point","coordinates":[7.05,4.82]}, "properties":{"id":"SPL-001","date":"2025-01-15","state":"Rivers","company":"Shell","cause":"Equipment failure","qty":45.5,"rec":32.1,"type":"crude","impact":"land"} },
-    { "type":"Feature", "geometry":{"type":"Point","coordinates":[6.45,4.45]}, "properties":{"id":"SPL-002","date":"2025-02-03","state":"Bayelsa","company":"AGIP","cause":"Pipeline corrosion","qty":120.0,"rec":15.0,"type":"crude","impact":"water"} },
-    { "type":"Feature", "geometry":{"type":"Point","coordinates":[5.80,5.90]}, "properties":{"id":"SPL-003","date":"2025-03-11","state":"Delta","company":"Chevron","cause":"Sabotage","qty":200.0,"rec":0.0,"type":"condensate","impact":"mangrove"} },
-    { "type":"Feature", "geometry":{"type":"Point","coordinates":[7.40,4.10]}, "properties":{"id":"SPL-004","date":"2025-03-22","state":"Akwa Ibom","company":"Mobil","cause":"Illegal bunkering","qty":5000.0,"rec":120.0,"type":"crude","impact":"water"} },
-    { "type":"Feature", "geometry":{"type":"Point","coordinates":[7.00,5.00]}, "properties":{"id":"SPL-005","date":"2025-04-10","state":"Rivers","company":"Total","cause":"Third party damage","qty":15.0,"rec":14.0,"type":"crude","impact":"land"} },
-    { "type":"Feature", "geometry":{"type":"Point","coordinates":[6.20,4.60]}, "properties":{"id":"SPL-006","date":"2024-11-20","state":"Bayelsa","company":"AGIP","cause":"Equipment failure","qty":85.0,"rec":40.0,"type":"crude","impact":"land"} },
-  ]
-};
+const API_BASE = '/api/v1';
+
+async function loadData() {
+  const banner = document.getElementById('banner');
+  try {
+    const [geoRes, statsRes] = await Promise.all([
+      fetch(`${API_BASE}/spills/geojson?limit=500`),
+      fetch(`${API_BASE}/spills/stats`),
+    ]);
+    if (!geoRes.ok || !statsRes.ok) {
+      throw new Error(`API responded ${geoRes.status}/${statsRes.status}`);
+    }
+    const geo = await geoRes.json();
+    const stats = await statsRes.json();
+
+    // Records without coordinates are kept in the data but cannot be drawn.
+    const drawable = {
+      type: 'FeatureCollection',
+      features: geo.features.filter(f => f.geometry !== null),
+    };
+    map.getSource('spills').setData(drawable);
+
+    document.getElementById('stat-count').textContent =
+      stats.total_incidents.toLocaleString();
+    document.getElementById('stat-spilled').textContent =
+      stats.total_spilled_bbl.toLocaleString();
+    document.getElementById('stat-recovered').textContent =
+      `${stats.overall_recovery_pct ?? 0}%`;
+
+    window.__observatoryLoaded = true;
+    window.__observatoryDrawable = drawable.features.length;
+  } catch (err) {
+    banner.hidden = false;
+    banner.textContent = `API unreachable — start it with: python -m uvicorn src.api.main:app --port 8766 (${err.message})`;
+  }
+}
 
 // ── Map initialization ────────────────────────────────────────────────────
 const map = new maplibregl.Map({
@@ -105,11 +139,12 @@ map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 map.on('load', () => {
   map.addSource('spills', {
     type: 'geojson',
-    data: SAMPLE_SPILLS,
+    data: { type: 'FeatureCollection', features: [] },
     cluster: true,
     clusterMaxZoom: 12,
     clusterRadius: 40,
   });
+  loadData();
 
   // Clusters
   map.addLayer({
@@ -133,7 +168,10 @@ map.on('load', () => {
     filter: ['has', 'point_count'],
     layout: {
       'text-field': ['get', 'point_count_abbreviated'],
-      'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+      // demotiles serves only Open Sans Semibold glyphs — requesting a
+      // Mapbox-specific font stack 404s the glyphs and fails the whole
+      // tile, which silently drops every clustered point.
+      'text-font': ['Open Sans Semibold'],
       'text-size': 13,
     },
     paint: { 'text-color': '#fff' },
@@ -146,11 +184,11 @@ map.on('load', () => {
     source: 'spills',
     filter: ['!', ['has', 'point_count']],
     paint: {
-      'circle-color': ['match', ['get', 'type'], 'condensate', '#4ecdc4', '#ff6b35'],
+      'circle-color': ['match', ['get', 'spill_type'], 'condensate', '#4ecdc4', '#ff6b35'],
       'circle-radius': [
         'case',
-        ['<=', ['get', 'qty'], 10], 6,
-        ['<=', ['get', 'qty'], 500], 10,
+        ['<=', ['coalesce', ['get', 'quantity_spilled'], 0], 10], 6,
+        ['<=', ['get', 'quantity_spilled'], 500], 10,
         16,
       ],
       'circle-opacity': 0.8,
@@ -164,31 +202,27 @@ map.on('load', () => {
 
   map.on('click', 'spill-points', (e) => {
     const p = e.features[0].properties;
-    const recPct = p.qty > 0 ? ((p.rec / p.qty) * 100).toFixed(1) : '0.0';
+    const recPct = p.quantity_spilled > 0
+      ? ((p.quantity_recovered ?? 0) / p.quantity_spilled * 100).toFixed(1)
+      : '0.0';
+    const fmt = (v) => (v ?? 0).toLocaleString();
     popup.setLngLat(e.lngLat).setHTML(`
       <div class="popup-content">
-        <h3>${p.id}</h3>
-        <p><strong>Date:</strong> ${p.date}</p>
-        <p><strong>State:</strong> ${p.state}</p>
-        <p><strong>Company:</strong> ${p.company}</p>
-        <p><strong>Cause:</strong> ${p.cause}</p>
-        <p><strong>Spilled:</strong> ${p.qty.toLocaleString()} bbl</p>
-        <p><strong>Recovered:</strong> ${p.rec.toLocaleString()} bbl (${recPct}%)</p>
-        <p><strong>Impact area:</strong> ${p.impact}</p>
+        <h3>${p.incident_id}</h3>
+        <p><strong>Date:</strong> ${p.date ?? 'unrecorded'}</p>
+        <p><strong>State:</strong> ${p.state ?? '—'}</p>
+        <p><strong>Company:</strong> ${p.company ?? '—'}</p>
+        <p><strong>Cause:</strong> ${p.cause ?? '—'}</p>
+        <p><strong>Spilled:</strong> ${fmt(p.quantity_spilled)} bbl</p>
+        <p><strong>Recovered:</strong> ${fmt(p.quantity_recovered)} bbl (${recPct}%)</p>
+        <p><strong>Impact area:</strong> ${p.impact_area ?? '—'}</p>
+        <p><strong>Source:</strong> ${p.data_source ?? 'NOSDRA'}</p>
       </div>
     `).addTo(map);
   });
 
   map.on('mouseenter', 'spill-points', () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', 'spill-points', () => { map.getCanvas().style.cursor = ''; });
-
-  // Stats
-  const features = SAMPLE_SPILLS.features;
-  document.getElementById('stat-count').textContent = features.length;
-  const totalSpilled = features.reduce((s, f) => s + (f.properties.qty || 0), 0);
-  const totalRecovered = features.reduce((s, f) => s + (f.properties.rec || 0), 0);
-  document.getElementById('stat-spilled').textContent = totalSpilled.toLocaleString();
-  document.getElementById('stat-recovered').textContent = totalSpilled > 0 ? ((totalRecovered / totalSpilled) * 100).toFixed(0) + '%' : '0%';
 });
 </script>
 </body>

@@ -11,6 +11,7 @@ from datetime import datetime
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from . import config as api_config
 from .database import init_db
@@ -49,6 +50,11 @@ app.include_router(spills.router, prefix=api_config.API_PREFIX)
 app.include_router(flares.router, prefix=api_config.API_PREFIX)
 app.include_router(disclosures.router, prefix=api_config.API_PREFIX)
 
+# Static site: the MapLibre prototype, served same-origin so it can call the
+# API without CORS gymnastics. /site/prototype.html
+if api_config.DOCS_DIR.exists():
+    app.mount("/site", StaticFiles(directory=str(api_config.DOCS_DIR), html=True), name="site")
+
 
 # ── Health check ───────────────────────────────────────────────────────────
 @app.get("/health", response_model=HealthResponse, tags=["system"])
@@ -74,9 +80,10 @@ async def health():
 
 @app.get("/", tags=["system"])
 async def root():
-    """Root endpoint — redirects to docs."""
+    """Root endpoint — pointers to docs, the live map, and API docs."""
     return {
         "message": "Niger Delta Environmental Risk Observatory API",
         "docs": f"{api_config.API_PREFIX}/docs",
+        "map": "/site/prototype.html" if api_config.DOCS_DIR.exists() else None,
         "version": api_config.CURRENT_DATA_VERSION,
     }

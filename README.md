@@ -49,9 +49,21 @@ This ethical boundary is intentional. The project focuses on **environmental ris
 └── spikes/           # Throwaway experiments
 ```
 
+## Running it
+
+```
+pip install -r requirements.txt
+python src/etl/nosdra_pipeline.py                  # clean the raw export
+python -m uvicorn src.api.main:app --port 8766     # serve API + live map
+```
+
+Then open **http://127.0.0.1:8766/site/prototype.html** — a MapLibre map of
+the cleaned spill record with live stats from the API (what you see is what
+the ETL produced; no hardcoded samples).
+
 ## Status
 
-**Phases 0–2 complete** — repo, NOSDRA ETL pipeline (tested), OSM context layer + static portfolio map, FastAPI serving layer (tested end-to-end), data-quality scorecard. Next: Phase 3 (VIIRS gas flaring pipeline).
+**Phases 0–2 complete** — repo, NOSDRA ETL pipeline (tested), OSM context layer + static portfolio map, FastAPI serving layer (tested end-to-end) with a live MapLibre map, data-quality scorecard (per-operator breakdown included). Next: Phase 3 (VIIRS gas flaring pipeline).
 
 ## License
 

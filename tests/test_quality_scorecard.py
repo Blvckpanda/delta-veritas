@@ -15,10 +15,12 @@ Fixture ledger (6 records):
 
   Duplicates: A1 id appears twice (1 duplicate).                  → dup 1 / 6 = 16.7%
   Cause cardinality: {Equipment, Corrosion, Sabotage, Wellhead}   → 4
+  Companies: Shell {A1, A2, C1}, Agip {B1, B2}, Total {D1}
   Completeness (coords/date/jiv): A1 3/3, A2 1/3, B1 3/3, B2 1/3, C1 1/3, D1 3/3
   → coordinate 4/6 = 66.7% (A1,B1,B2,D1), date 4/6 (A1,A1,B1,D1), jiv 4/6 (A1,B1,C1,D1)
   JIV lags measured: A1 10, B1 40, D1 5 → measured 3, median 10, max 40,
     over-cap(>28d) 1 = 33.3%
+  (C1's JIV date has no incident date → Shell jiv_pct counts A1+C1 = 66.7)
   Volume buckets: plausible {A1 100, A2 50, D1 200} = 3; over_cap {B1} = 1;
     below_min {C1 0.05} = 1; missing_or_nulled {B2} = 1; negative = 0
   Suspicious recovery (≥99.9%): A2 (100%) + C1 (capped 100%) = 2
@@ -26,6 +28,10 @@ Fixture ledger (6 records):
     → tie at 66.7% broken by more records → 2025 (4 records)
   Worst LGA: Ahoada (A1+A2) 4/6 = 66.7%; Ughelli (B1+B2) 4/6 = 66.7%
     → tie broken by more records, both 2 → first encountered wins → Ahoada
+  Per operator (sorted by records desc, then name):
+    Shell 3 → coords 33.3, dates 66.7, jiv 33.3, dup 1, suspicious 2, lag 10.0
+    Agip 2 → coords 100.0, dates 50.0, jiv 50.0, dup 0, suspicious 0, lag 40.0
+    Total 1 → coords 100.0, dates 100.0, jiv 100.0, dup 0, suspicious 0, lag 5.0
 """
 
 import json
@@ -38,27 +44,27 @@ from quality_scorecard import compute_scorecard, load_records, run
 # ── Crafted fixture ────────────────────────────────────────────────────────
 RECORDS = [
     dict(incident_id="A1", date="2024-03-01", jiv_date="2024-03-11",
-         state="Rivers", lga="Ahoada", year=2024, cause="Equipment",
+         state="Rivers", lga="Ahoada", year=2024, cause="Equipment", company="Shell",
          quantity_spilled=100.0, quantity_recovered=10.0,
          latitude=5.1, longitude=6.6),
     dict(incident_id="A1", date="2024-04-01", jiv_date=None,
-         state="Rivers", lga="Ahoada", year=2024, cause="Corrosion",
+         state="Rivers", lga="Ahoada", year=2024, cause="Corrosion", company="Shell",
          quantity_spilled=50.0, quantity_recovered=50.0,
          latitude=None, longitude=None),
     dict(incident_id="B1", date="2025-05-01", jiv_date="2025-06-10",
-         state="Delta", lga="Ughelli", year=2025, cause="Sabotage",
+         state="Delta", lga="Ughelli", year=2025, cause="Sabotage", company="Agip",
          quantity_spilled=10**6, quantity_recovered=0.0,
          latitude=5.3, longitude=6.2),
     dict(incident_id="B2", date=None, jiv_date=None,
-         state="Delta", lga="Ughelli", year=2025, cause="Wellhead",
+         state="Delta", lga="Ughelli", year=2025, cause="Wellhead", company="Agip",
          quantity_spilled=None, quantity_recovered=None,
          latitude=5.4, longitude=6.3),
     dict(incident_id="C1", date=None, jiv_date="2025-07-01",
-         state="Delta", lga=None, year=2025, cause="Equipment",
+         state="Delta", lga=None, year=2025, cause="Equipment", company="Shell",
          quantity_spilled=0.05, quantity_recovered=7.0,
          latitude=None, longitude=None),
     dict(incident_id="D1", date="2025-08-01", jiv_date="2025-08-06",
-         state="Bayelsa", lga="Sagbama", year=2025, cause="Sabotage",
+         state="Bayelsa", lga="Sagbama", year=2025, cause="Sabotage", company="Total",
          quantity_spilled=200.0, quantity_recovered=199.0,
          latitude=4.9, longitude=6.4),
 ]
@@ -123,6 +129,19 @@ class TestCraftedFixture:
         # Ahoada and Ughelli tie at 66.7% with 2 records each → first wins.
         assert report["worst_lga"] == {"lga": "Ahoada", "records": 2, "completeness_pct": 66.7}
 
+    def test_per_company(self, report):
+        assert report["per_company"] == [
+            {"company": "Shell", "records": 3, "coordinate_pct": 33.3,
+             "date_pct": 66.7, "jiv_pct": 66.7, "duplicate_count": 1,
+             "suspicious_recovery_count": 2, "jiv_lag_median_days": 10.0},
+            {"company": "Agip", "records": 2, "coordinate_pct": 100.0,
+             "date_pct": 50.0, "jiv_pct": 50.0, "duplicate_count": 0,
+             "suspicious_recovery_count": 0, "jiv_lag_median_days": 40.0},
+            {"company": "Total", "records": 1, "coordinate_pct": 100.0,
+             "date_pct": 100.0, "jiv_pct": 100.0, "duplicate_count": 0,
+             "suspicious_recovery_count": 0, "jiv_lag_median_days": 5.0},
+        ]
+
     def test_suspicious_boundary_exact_threshold(self):
         """99.9 exactly counts as suspicious; 99.89 does not."""
         recs = [
@@ -146,6 +165,7 @@ class TestEdgeCases:
         assert r["cause_cardinality"] == 0
         assert r["jiv_lag"]["median_days"] is None
         assert r["worst_year"] is None and r["worst_lga"] is None
+        assert r["per_company"] == []
 
     def test_all_null_fields(self):
         r = compute_scorecard([{}, {}, {}])
@@ -155,6 +175,7 @@ class TestEdgeCases:
         assert r["jiv_lag"] == {"measured": 0, "median_days": None, "max_days": None,
                                 "over_cap_count": 0, "over_cap_pct": 0.0}
         assert r["worst_year"] is None and r["worst_lga"] is None
+        assert r["per_company"] == []
 
     def test_bare_list_of_property_dicts(self):
         r = compute_scorecard(load_records.__wrapped__ if False else [
@@ -174,6 +195,8 @@ class TestMarkdown:
         assert "| Coordinate completeness | 66.7% |" in md
         assert "| Duplicate incident IDs | 1 (16.7%) |" in md
         assert "JIV lag > 28d | 1 (33.3%)" in md
+        assert "| Shell | 3 | 33.3 | 66.7 | 66.7 | 1 | 2 | 10.0 |" in md
+        assert "| Agip | 2 | 100.0 | 50.0 | 50.0 | 0 | 0 | 40.0 |" in md
 
 
 # ── CLI runner ─────────────────────────────────────────────────────────────

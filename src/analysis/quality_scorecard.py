@@ -169,19 +169,59 @@ def _suspicious_recovery(records: list[dict]) -> int:
 
 def _jiv_lag_metrics(records: list[dict]) -> dict:
     """Lag in days between incident date and JIV date."""
+    lags = _lag_values(records)
+    over = sum(1 for lag in lags if lag > config.QC_JIV_LAG_CAP_DAYS)
+    return {
+        "measured": len(lags),
+        "median_days": round(float(statistics.median(lags)), 1) if lags else None,
+        "max_days": max(lags) if lags else None,
+        "over_cap_count": over,
+        "over_cap_pct": round(over / len(lags) * 100, 1) if lags else 0.0,
+    }
+
+
+def _lag_values(records: list[dict]) -> list[int]:
+    """All measurable JIV lags in days (records with both dates set)."""
     lags = []
     for r in records:
         d, j = _iso(r, config.COL_DATE), _iso(r, config.COL_JIV_DATE)
         if d and j:
             lags.append((j - d).days)
-    over = sum(1 for lag in lags if lag > config.QC_JIV_LAG_CAP_DAYS)
-    return {
-        "measured": len(lags),
-        "median_days": statistics.median(lags) if lags else None,
-        "max_days": max(lags) if lags else None,
-        "over_cap_count": over,
-        "over_cap_pct": round(over / len(lags) * 100, 1) if lags else 0.0,
-    }
+    return lags
+
+
+def _company_breakdown(records: list[dict]) -> list[dict]:
+    """Per-operator quality metrics — the litigation-relevant view.
+
+    Every operator with at least one attributed record appears (unlike
+    worst-year/worst-LGA, single-record groups are kept: a one-spill
+    operator's record is still accountable). Sorted by volume of records,
+    then name.
+    """
+    groups: dict[str, list[dict]] = {}
+    for r in records:
+        name = (r.get(config.COL_COMPANY) or "").strip()
+        if not name or name.lower() in config.NULL_DATE_STRINGS:
+            continue
+        groups.setdefault(name, []).append(r)
+
+    rows = []
+    for name, members in groups.items():
+        comp = _completeness_metrics(members)
+        dup = _duplicate_metrics(members)
+        lags = _lag_values(members)
+        rows.append({
+            "company": name,
+            "records": len(members),
+            "coordinate_pct": comp["coordinate_pct"],
+            "date_pct": comp["date_pct"],
+            "jiv_pct": comp["jiv_pct"],
+            "duplicate_count": dup["duplicate_count"],
+            "suspicious_recovery_count": _suspicious_recovery(members),
+            "jiv_lag_median_days": round(float(statistics.median(lags)), 1) if lags else None,
+        })
+    rows.sort(key=lambda row: (-row["records"], row["company"].casefold()))
+    return rows
 
 
 def _worst_completeness(records: list[dict], key: str) -> dict | None:
@@ -231,6 +271,7 @@ def compute_scorecard(records: list[dict]) -> dict:
         "jiv_lag": _jiv_lag_metrics(records),
         "worst_year": _worst_completeness(records, config.COL_YEAR),
         "worst_lga": _worst_completeness(records, config.COL_LGA),
+        "per_company": _company_breakdown(records),
     }
 
 
@@ -283,6 +324,25 @@ def render_markdown(report: dict, source_name: str, generated_at: str) -> str:
         "",
         f"- **Year:** {report['worst_year']}",
         f"- **LGA:** {report['worst_lga']}",
+        "",
+        "## Per-operator breakdown",
+        "",
+        "| Operator | Records | Coords % | Dates % | JIV % | Dups | "
+        "Suspicious recovery | JIV lag median (d) |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for row in report["per_company"]:
+        lines.append(
+            f"| {row['company']} | {row['records']} | {row['coordinate_pct']} | "
+            f"{row['date_pct']} | {row['jiv_pct']} | {row['duplicate_count']} | "
+            f"{row['suspicious_recovery_count']} | "
+            f"{row['jiv_lag_median_days'] if row['jiv_lag_median_days'] is not None else 'n/a'} |"
+        )
+    lines += [
+        "",
+        "*Operator attribution is exactly as recorded — variants of the same "
+        "company (e.g. “Shell” vs “Shell Petroleum Dev Co”) are counted "
+        "separately until cause/company normalisation lands.*",
         "",
     ]
     return "\n".join(lines)
