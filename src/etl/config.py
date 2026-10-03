@@ -27,6 +27,33 @@ NOSDRA_CLEAN_GEOJSON = "nosdra_spills_clean.geojson"
 NOSDRA_CLEAN_PARQUET = "nosdra_spills_clean.parquet"
 NOSDRA_Q12_FILTERED = "nosdra_spills_q1_2.parquet"  # Q1 & Q2 2025 sample
 
+# ── NOSDRA export fetch (live API) ─────────────────────────────────────────
+# The oilspillmonitor.ng SPA loads its full historical incident table from
+# this endpoint via a plain, unauthenticated XHR — the same data its manual
+# Download button wraps. Scripted fetch is the primary ingest path; the
+# manual browser export stays as fallback (docs/nosdra-export-guide.md).
+NOSDRA_EXPORT_URL = (
+    "https://oilspillmonitor.ng/api/spill-data.php?dataset=nosdra&format=json"
+)
+NOSDRA_FETCH_TIMEOUT_S = 120
+NOSDRA_FETCH_USER_AGENT = "niger-delta-observatory/0.1 (public-disclosure ETL)"
+
+# `statesaffected` in the live export arrives as 2-letter codes plus stray
+# full names (54 distinct variants observed on 2026-10-03). Only
+# unambiguous Niger Delta codes are decoded; anything else passes through
+# raw and is logged so nothing is silently mislabelled.
+NOSDRA_STATE_CODES = {
+    "RI": "Rivers",
+    "BY": "Bayelsa",
+    "DE": "Delta",
+    "AK": "Akwa Ibom",
+    "IM": "Imo",
+    "AB": "Abia",
+    "ED": "Edo",
+    "ON": "Ondo",
+    "CR": "Cross River",
+}
+
 # ── Column Names (mapped from NOSDRA GeoJSON properties) ───────────────────
 COL_INCIDENT_ID = "incident_id"
 COL_DATE = "date"  # date of spill incident

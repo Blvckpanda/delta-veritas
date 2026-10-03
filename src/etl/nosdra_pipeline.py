@@ -13,9 +13,11 @@ Supports both single-file and batch directory mode.
 """
 
 import argparse
+import gzip
 import json
 import logging
 import sys
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -129,6 +131,112 @@ def clean_quantity(val):
     return round(q, 2)
 
 
+# ── Live API schema mapping ────────────────────────────────────────────────
+def _text(val) -> str:
+    """Strip a raw value to text; None becomes ''."""
+    return "" if val is None else str(val).strip()
+
+
+def map_api_record(props: dict) -> dict:
+    """Map one raw oilspillmonitor.ng API record to the canonical schema.
+
+    The live endpoint (config.NOSDRA_EXPORT_URL) returns a bare JSON array
+    of flat dicts whose keys use a different vocabulary from the manual
+    browser export this pipeline was originally built on:
+
+        incidentnumber    → incident_id  (falls back to "NOSDRA-API-<id>"
+                                          when blank — ~23% of records)
+        incidentdate      → date
+        statesaffected    → state        (codes decoded via
+                                          config.NOSDRA_STATE_CODES)
+        sitelocationname  → community
+        spillareahabitat  → impact_area
+        estimatedquantity → quantity_spilled
+        quantityrecovered → quantity_recovered
+        jivdate           → jiv_date
+
+    company / cause / status / contaminant / latitude / longitude keep their
+    names. Raw cause codes ("sab", "eqf", …) are preserved verbatim — cause
+    normalisation is a deliberate later stage. API-only fields (reportdate,
+    formadate, remediation*, attachments, …) are dropped: the canonical
+    schema and the API database stay fixed.
+
+    Records already in canonical form (carrying `incident_id`) — or in any
+    other unknown vocabulary — pass through untouched, so hand-authored
+    fixtures keep flowing unchanged.
+    """
+    if config.COL_INCIDENT_ID in props:
+        return props
+    if not ({"incidentnumber", "incidentdate"} & props.keys()):
+        return props
+
+    incident_id = str(props.get("incidentnumber") or "").strip()
+    if not incident_id:
+        incident_id = f"NOSDRA-API-{props.get('id', '')}"
+
+    state = _text(props.get("statesaffected"))
+    if state.lower() in config.NULL_DATE_STRINGS:
+        state = ""
+    else:
+        state = config.NOSDRA_STATE_CODES.get(state.upper(), state)
+
+    return {
+        config.COL_INCIDENT_ID: incident_id,
+        config.COL_DATE: _text(props.get("incidentdate")),
+        config.COL_STATE: state,
+        config.COL_LGA: _text(props.get("lga")),
+        config.COL_COMMUNITY: _text(props.get("sitelocationname")),
+        config.COL_COMPANY: _text(props.get("company")),
+        config.COL_CAUSE: _text(props.get("cause")),
+        config.COL_SPILL_TYPE: "",  # live export has no direct equivalent
+        config.COL_QTY_SPILLED: props.get("estimatedquantity"),
+        config.COL_QTY_RECOVERED: props.get("quantityrecovered"),
+        config.COL_IMPACT_AREA: _text(props.get("spillareahabitat")),
+        config.COL_JIV_DATE: _text(props.get("jivdate")),
+        config.COL_LATITUDE: props.get("latitude"),
+        config.COL_LONGITUDE: props.get("longitude"),
+        config.COL_STATUS: _text(props.get("status")),
+        config.COL_CONTAMINANT: _text(props.get("contaminant")),
+    }
+
+
+# ── Live export fetch ─────────────────────────────────────────────────────
+def fetch_latest(output_path: Path) -> tuple[Path, int]:
+    """Download the live NOSDRA export and write it verbatim to output_path.
+
+    A single unauthenticated GET against config.NOSDRA_EXPORT_URL — the same
+    public XHR the oilspillmonitor.ng map loads in the browser. Returns
+    (path, record_count) after sanity-checking the response shape (a bare
+    JSON array); reshaping into the canonical schema happens in the ETL, so
+    raw files are never modified after download.
+    """
+    request = urllib.request.Request(
+        config.NOSDRA_EXPORT_URL,
+        headers={"User-Agent": config.NOSDRA_FETCH_USER_AGENT},
+    )
+    logger.info("Fetching NOSDRA export from %s", config.NOSDRA_EXPORT_URL)
+    with urllib.request.urlopen(request, timeout=config.NOSDRA_FETCH_TIMEOUT_S) as response:
+        payload = response.read()
+
+    # The server gzips the response regardless of Accept-Encoding, and urllib
+    # (unlike a browser) does not decompress transparently.
+    if payload[:2] == b"\x1f\x8b":
+        payload = gzip.decompress(payload)
+
+    records = json.loads(payload)
+    if not isinstance(records, list) or not records:
+        shape = type(records).__name__
+        count = len(records) if isinstance(records, list) else "n/a"
+        raise ValueError(f"unexpected export shape: {shape} (count={count})")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(payload)
+    logger.info(
+        "Wrote %s — %d raw records, %.1f KB", output_path, len(records), len(payload) / 1024
+    )
+    return output_path, len(records)
+
+
 # ── Feature transformation ────────────────────────────────────────────────
 def transform_feature(props: dict):
     """Normalise a single NOSDRA feature's properties."""
@@ -207,13 +315,17 @@ def run_pipeline(input_path: Path, output_dir: Path):
     logger.info("Loaded %d raw features", len(features))
 
     records = []
+    api_mapped = 0
     dropped_no_coords = 0
     dropped_no_date = 0
     dropped_other = 0
 
     for feat in features:
         props = feat.get("properties", feat)
-        rec = transform_feature(props)
+        mapped = map_api_record(props)
+        if mapped is not props:
+            api_mapped += 1
+        rec = transform_feature(mapped)
         if not rec[config.COL_INCIDENT_ID]:
             dropped_other += 1
             continue
@@ -227,6 +339,11 @@ def run_pipeline(input_path: Path, output_dir: Path):
         "Transformed %d records (no_coords=%d, no_date=%d, other_drop=%d)",
         len(records), dropped_no_coords, dropped_no_date, dropped_other,
     )
+    if api_mapped:
+        logger.info(
+            "Schema mapping: %d records converted from the live API vocabulary",
+            api_mapped,
+        )
 
     # Build output FeatureCollection
     fc = {
@@ -271,9 +388,17 @@ def main():
                         help="Path to raw NOSDRA GeoJSON file")
     parser.add_argument("--output", type=Path, default=config.DATA_PROCESSED,
                         help="Output directory (default: data/processed/)")
+    parser.add_argument("--fetch", action="store_true",
+                        help="Download the live export from the NOSDRA API first")
     args = parser.parse_args()
 
     input_path = args.input or config.DATA_RAW / config.NOSDRA_INPUT_FILENAME
+    if args.fetch:
+        try:
+            fetch_latest(input_path)
+        except (OSError, ValueError) as exc:
+            logger.error("Fetch failed: %s", exc)
+            sys.exit(1)
     if not input_path.exists():
         logger.error("Input file not found: %s", input_path)
         logger.info(

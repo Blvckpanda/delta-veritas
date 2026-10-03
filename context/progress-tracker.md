@@ -35,6 +35,8 @@
 - [x] Coordinate validation: Nigeria bounds enforced
 - [x] Date fallback chain: 17 format patterns + Excel serial decoder
 - [x] FastAPI schema (3 models) built and seeded
+- [x] Live API fetch (`--fetch`) + API→canonical schema mapping, tested with no network
+- [x] First real export processed: 21,171 records (2006–2026), zero drops, 22.6% without coords
 
 ## Phase 2 — Done When
 
@@ -68,6 +70,8 @@
 | 2026-09-30 | Deferred deps (geopandas, rasterio, pystac-client, stackstac, fiona, pyarrow, folium, h5py) moved to commented section of requirements.txt | Nothing imports them yet — they get re-promoted by the phase that first does (Phase 3) |
 | 2026-10-01 | Data-quality scorecard is the flagship analysis artifact (`src/analysis/quality_scorecard.py`) | Independent audit of the official record — nobody else publishes systematic QC of NOSDRA data; methodology caveat (audits the record, not ground truth) is rendered into every output |
 | 2026-10-01 | API tests isolate via OBSERVATORY_DATABASE_URL + NullPool; idempotent best-effort migrations add data_source to existing DBs | Tests must never write data/observatory.db; aiosqlite connections are loop-bound so pools break across asyncio.run/TestClient loops |
+| 2026-10-03 | Scripted fetch replaces manual export as the primary NOSDRA ingest path (`--fetch` hits the SPA's own unauthenticated XHR endpoint) | The manual File System API download was unreliable; the endpoint was discovered by inspecting the SPA's network traffic and serves the full 21,171-record table (2006–2026) in one GET, gzipped |
+| 2026-10-03 | Live-API schema mapped in `map_api_record` (canonical records pass through untouched); raw cause codes and unmapped state codes preserved, API-only fields dropped | One mapping layer keeps the canonical schema, API DB, scorecard, and map unchanged while the ingest path switches vocabulary; nothing is silently relabelled or dropped (first real run: 21,171 in → 21,171 out) |
 
 ## Open Questions
 

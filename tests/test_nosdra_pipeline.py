@@ -5,16 +5,27 @@ Covers the three pure cleaning functions (parse_date, validate_coords,
 clean_quantity) against every known date format, Excel serials, null
 sentinels, coordinate edge cases, and quantity thresholds — then runs the
 full pipeline over the 9-record edge-case fixture and asserts its
-documented behaviour.
+documented behaviour. Also covers the live-API schema mapping
+(map_api_record) and the scripted export fetch (fetch_latest, mocked —
+no network in tests).
 """
 
+import gzip
 import json
 from pathlib import Path
 from typing import ClassVar
 
 import config
 import pytest
-from nosdra_pipeline import clean_quantity, parse_date, run_pipeline, validate_coords
+from nosdra_pipeline import (
+    clean_quantity,
+    fetch_latest,
+    map_api_record,
+    parse_date,
+    run_pipeline,
+    transform_feature,
+    validate_coords,
+)
 
 RAW_DIR = Path(__file__).resolve().parent.parent / "data" / "raw"
 EDGE_CASE_FILE = RAW_DIR / "nosdra_test_edge_cases.json"
@@ -215,3 +226,208 @@ class TestEdgeCaseFixture:
         loaded = json.loads(path.read_text(encoding="utf-8"))
         assert loaded["type"] == "FeatureCollection"
         assert len(loaded["features"]) == len(fc["features"])
+
+
+# ── Live API schema mapping ────────────────────────────────────────────────
+class TestApiMapping:
+    """map_api_record: the live export's vocabulary → canonical schema."""
+
+    def test_full_api_record_maps_exactly(self):
+        raw = {
+            "id": "2",
+            "status": "confirmed",
+            "company": "ADDAX",
+            "incidentnumber": "HSE/OBO/0611/101",
+            "incidentdate": "2006-11-23",
+            "contaminant": "cr",
+            "estimatedquantity": "225",
+            "sitelocationname": "Subsea Platform (OML123)",
+            "spillareahabitat": "of",
+            "latitude": "4.82",
+            "longitude": "7.05",
+            "cause": "sab",
+            "jivdate": "2006-12-01",
+            "statesaffected": "RI",
+            "lga": "Bonny",
+            "lastupdatedby": "NOSDRA",   # API-only field → dropped
+            "attachments": "x.pdf",      # API-only field → dropped
+        }
+        mapped = map_api_record(raw)
+        assert mapped["incident_id"] == "HSE/OBO/0611/101"
+        assert mapped["date"] == "2006-11-23"
+        assert mapped["state"] == "Rivers"
+        assert mapped["lga"] == "Bonny"
+        assert mapped["community"] == "Subsea Platform (OML123)"
+        assert mapped["company"] == "ADDAX"
+        assert mapped["cause"] == "sab"            # raw codes preserved
+        assert mapped["quantity_spilled"] == "225"  # cleaned later by the ETL
+        assert mapped["quantity_recovered"] is None
+        assert mapped["impact_area"] == "of"
+        assert mapped["jiv_date"] == "2006-12-01"
+        assert mapped["status"] == "confirmed"
+        assert mapped["contaminant"] == "cr"
+        assert "lastupdatedby" not in mapped
+        assert "attachments" not in mapped
+
+    def test_canonical_records_pass_through_untouched(self):
+        canonical = {"incident_id": "X1", "date": "2025-01-01", "state": "Rivers"}
+        assert map_api_record(canonical) is canonical
+
+    def test_unknown_vocabulary_passes_through(self):
+        weird = {"spill_name": "mystery", "when": "yesterday"}
+        assert map_api_record(weird) is weird
+
+    def test_blank_incidentnumber_falls_back_to_api_id(self):
+        mapped = map_api_record(
+            {"id": "4242", "incidentdate": "2015-06-01", "incidentnumber": ""}
+        )
+        assert mapped["incident_id"] == "NOSDRA-API-4242"
+
+    def test_missing_incidentnumber_falls_back_to_api_id(self):
+        mapped = map_api_record({"id": "77", "incidentdate": "2015-06-01"})
+        assert mapped["incident_id"] == "NOSDRA-API-77"
+
+    def test_state_codes_decode(self):
+        for code, name in config.NOSDRA_STATE_CODES.items():
+            mapped = map_api_record({"incidentdate": "2020-01-01", "statesaffected": code})
+            assert mapped["state"] == name
+
+    def test_unknown_state_code_passes_through_raw(self):
+        mapped = map_api_record({"incidentdate": "2020-01-01", "statesaffected": "ZZ"})
+        assert mapped["state"] == "ZZ"
+
+    def test_lowercase_state_code_still_decodes(self):
+        mapped = map_api_record({"incidentdate": "2020-01-01", "statesaffected": "ri"})
+        assert mapped["state"] == "Rivers"
+
+    def test_full_name_state_passes_through(self):
+        mapped = map_api_record({"incidentdate": "2020-01-01", "statesaffected": "KADUNA"})
+        assert mapped["state"] == "KADUNA"
+
+    def test_null_sentinel_state_emptied(self):
+        mapped = map_api_record({"incidentdate": "2020-01-01", "statesaffected": "N/A"})
+        assert mapped["state"] == ""
+
+    def test_nil_quantity_maps_raw_then_nulls_in_etl(self):
+        # "nil" survives mapping untouched; the ETL's clean_quantity nulls it.
+        rec = transform_feature(map_api_record(
+            {"id": "1", "incidentdate": "2020-01-01", "estimatedquantity": "nil"}
+        ))
+        assert rec["quantity_spilled"] is None
+
+    def test_typo_quantity_maps_raw_then_nulls_in_etl(self):
+        rec = transform_feature(map_api_record(
+            {"id": "1", "incidentdate": "2020-01-01", "estimatedquantity": "I.5"}
+        ))
+        assert rec["quantity_spilled"] is None
+
+    def test_string_coordinates_validate_in_etl(self):
+        rec = transform_feature(map_api_record({
+            "id": "1", "incidentdate": "2020-01-01",
+            "latitude": "4.82", "longitude": "7.05",
+        }))
+        assert (rec["latitude"], rec["longitude"]) == (4.82, 7.05)
+
+    def test_out_of_bounds_coords_nulled_in_etl(self):
+        rec = transform_feature(map_api_record({
+            "id": "1", "incidentdate": "2020-01-01",
+            "latitude": "51.5", "longitude": "-0.12",
+        }))
+        assert rec["latitude"] is None and rec["longitude"] is None
+
+    def test_api_record_end_to_end_through_pipeline(self, tmp_path):
+        raw = {"type": "FeatureCollection", "features": [
+            {"type": "Feature",
+             "geometry": {"type": "Point", "coordinates": [7.05, 4.82]},
+             "properties": {
+                 "id": "9", "status": "confirmed", "company": "SHELL",
+                 "incidentnumber": "HSE/PHC/2020/001", "incidentdate": "2020-02-15",
+                 "cause": "cor", "estimatedquantity": "120.5",
+                 "quantityrecovered": "60", "jivdate": "2020-03-01",
+                 "sitelocationname": "Okrika", "spillareahabitat": "sw",
+                 "statesaffected": "RI", "lga": "Okrika",
+                 "latitude": "4.73", "longitude": "7.08",
+             }},
+        ]}
+        path = tmp_path / "api_export.json"
+        path.write_text(json.dumps(raw), encoding="utf-8")
+        fc = run_pipeline(path, tmp_path)
+        props = fc["features"][0]["properties"]
+        assert props["incident_id"] == "HSE/PHC/2020/001"
+        assert props["date"] == "2020-02-15"
+        assert props["year"] == 2020
+        assert props["state"] == "Rivers"
+        assert props["quantity_spilled"] == 120.5
+        assert props["quantity_recovered"] == 60.0
+        assert props["recovery_pct"] == 49.8  # 60 / 120.5 = 49.79… → 49.8
+        assert props["data_source"] == "NOSDRA"
+        assert fc["features"][0]["geometry"]["coordinates"] == [7.08, 4.73]
+
+
+# ── fetch_latest (mocked — no network in tests) ────────────────────────────
+class _FakeResponse:
+    """Minimal context-manager stand-in for urlopen's return value."""
+
+    def __init__(self, payload: bytes):
+        self._payload = payload
+
+    def read(self) -> bytes:
+        return self._payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class TestFetchLatest:
+    def test_writes_verbatim_and_returns_count(self, tmp_path, monkeypatch):
+        payload = json.dumps([{"id": "1", "incidentdate": "2020-01-01"}]).encode()
+        monkeypatch.setattr("urllib.request.urlopen",
+                            lambda req, timeout: _FakeResponse(payload))
+        out = tmp_path / "raw" / "nosdra.json"
+        path, count = fetch_latest(out)
+        assert path == out and count == 1
+        assert json.loads(out.read_text(encoding="utf-8")) == [
+            {"id": "1", "incidentdate": "2020-01-01"}
+        ]
+
+    def test_gzip_response_is_decompressed(self, tmp_path, monkeypatch):
+        """The server gzips regardless of Accept-Encoding; urllib must cope."""
+        payload = gzip.compress(json.dumps([{"id": "1", "incidentdate": "2020-01-01"}]).encode())
+        monkeypatch.setattr("urllib.request.urlopen",
+                            lambda req, timeout: _FakeResponse(payload))
+        out = tmp_path / "out.json"
+        _, count = fetch_latest(out)
+        assert count == 1
+        assert json.loads(out.read_text(encoding="utf-8")) == [
+            {"id": "1", "incidentdate": "2020-01-01"}
+        ]
+
+    def test_unexpected_shape_raises(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("urllib.request.urlopen",
+                            lambda req, timeout: _FakeResponse(b'{"error": "nope"}'))
+        with pytest.raises(ValueError, match="unexpected export shape"):
+            fetch_latest(tmp_path / "out.json")
+
+    def test_empty_array_raises(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("urllib.request.urlopen",
+                            lambda req, timeout: _FakeResponse(b"[]"))
+        with pytest.raises(ValueError):
+            fetch_latest(tmp_path / "out.json")
+
+    def test_uses_config_url_user_agent_and_timeout(self, tmp_path, monkeypatch):
+        seen = {}
+
+        def fake_urlopen(req, timeout):
+            seen["url"] = req.full_url
+            seen["ua"] = req.headers.get("User-agent")
+            seen["timeout"] = timeout
+            return _FakeResponse(b'[{"id": "1"}]')
+
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+        fetch_latest(tmp_path / "out.json")
+        assert seen["url"] == config.NOSDRA_EXPORT_URL
+        assert seen["ua"] == config.NOSDRA_FETCH_USER_AGENT
+        assert seen["timeout"] == config.NOSDRA_FETCH_TIMEOUT_S

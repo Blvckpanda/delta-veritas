@@ -1,10 +1,31 @@
 # Getting the Real NOSDRA Export + Reading the Scorecard
 
-## Part 1 — Exporting from oilspillmonitor.ng
+## Part 1 — Getting the NOSDRA Export
 
-NOSDRA's Oil Spill Monitor is a single-page app; its download uses the
-browser's File System API, so there is no scripted/URL fetch — you export
-manually once per refresh cycle.
+### Scripted fetch (primary)
+
+The Oil Spill Monitor SPA loads its full historical incident table from an
+unauthenticated endpoint — the same data the Download button wraps:
+
+```
+python src/etl/nosdra_pipeline.py --fetch
+```
+
+One GET downloads every incident since 2006 (~21,000 records) to
+`data/raw/nosdra.json` and then runs the pipeline over it. The response is
+a bare JSON array of flat dicts in the live API's own vocabulary
+(`incidentnumber`, `incidentdate`, `statesaffected`, `estimatedquantity`,
+`jivdate`, …); `map_api_record` converts it to the canonical schema before
+cleaning — raw `cause` codes (`sab`, `eqf`, `cor`, `ome`, …) are preserved
+verbatim, unknown `statesaffected` values pass through untouched, and
+~2% administrative-only rows (remediation certificates, cleanup updates)
+are kept with `NOSDRA-API-<id>`/`<id>` identifiers. Re-run `--fetch`
+anytime for a fresh snapshot; raw files are never modified after download.
+
+### Manual export (fallback)
+
+If the endpoint is ever unreachable, the manual path still works — it is a
+single-page app whose download uses the browser's File System API:
 
 1. Open **https://nosdra.oilspillmonitor.ng** in Chrome or Edge.
 2. Let the incident layer load (the map fills with spill markers).
@@ -14,7 +35,8 @@ manually once per refresh cycle.
 4. Click **Download**. The browser saves a GeoJSON file (array of features
    or FeatureCollection — the pipeline accepts both).
 5. Move it to `data/raw/nosdra.json` (the pipeline's default input name;
-   back up the sample file first). Raw files are never modified after this.
+   the previous file survives in git history). Raw files are never modified
+   after this.
 6. Run the pipeline:
 
    ```
@@ -27,9 +49,11 @@ manually once per refresh cycle.
 ### What to expect from real data
 
 - **20–40% of records without valid coordinates** — they are kept, dated,
-  and analyzed, just not mapped.
-- **Dozens of `cause` variants** — free text is preserved; normalisation
-  is a future stage. The scorecard reports the raw cardinality.
+  and analyzed, just not mapped. (First live fetch: 22.6%.)
+- **Cause arrives as abbreviated codes** from the live API (`sab` =
+  sabotage, `eqf` = equipment failure, `cor` = corrosion, `ome` =
+  operations/maintenance error, `other:`) — preserved verbatim; the
+  scorecard reports the raw cardinality. Normalisation is a future stage.
 - **Mixed date formats** — 17 known patterns + Excel serials are handled;
   truly unparseable dates stay null and are logged.
 - **Volume outliers** — negatives and placeholder zeros are nulled by the
