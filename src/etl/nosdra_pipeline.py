@@ -16,6 +16,7 @@ import argparse
 import gzip
 import json
 import logging
+import math
 import sys
 import urllib.request
 from datetime import datetime
@@ -125,6 +126,10 @@ def clean_quantity(val):
     try:
         q = float(val)
     except (TypeError, ValueError):
+        return None
+    # NaN/inf parse as floats and fail every < / > comparison below, so they
+    # must be rejected explicitly (live export contains "nan" quantities).
+    if not math.isfinite(q):
         return None
     if q < config.MIN_VALID_SPILL_QUANTITY or q > config.MAX_SPILL_QUANTITY:
         return None

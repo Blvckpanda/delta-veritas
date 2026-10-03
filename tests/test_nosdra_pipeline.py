@@ -155,6 +155,17 @@ class TestCleanQuantity:
     def test_rounded_to_two_decimals(self):
         assert clean_quantity(45.123456) == 45.12
 
+    def test_nan_quantity_rejected(self):
+        """NaN parses as float and fails every comparison — reject explicitly."""
+        assert clean_quantity("nan") is None
+        assert clean_quantity("NaN") is None
+        assert clean_quantity(float("nan")) is None
+
+    def test_infinite_quantity_rejected(self):
+        assert clean_quantity("inf") is None
+        assert clean_quantity("Infinity") is None
+        assert clean_quantity(float("-inf")) is None
+
 
 # ── Full pipeline over the edge-case fixture ──────────────────────────────
 class TestEdgeCaseFixture:

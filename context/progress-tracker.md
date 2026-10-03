@@ -72,6 +72,7 @@
 | 2026-10-01 | API tests isolate via OBSERVATORY_DATABASE_URL + NullPool; idempotent best-effort migrations add data_source to existing DBs | Tests must never write data/observatory.db; aiosqlite connections are loop-bound so pools break across asyncio.run/TestClient loops |
 | 2026-10-03 | Scripted fetch replaces manual export as the primary NOSDRA ingest path (`--fetch` hits the SPA's own unauthenticated XHR endpoint) | The manual File System API download was unreliable; the endpoint was discovered by inspecting the SPA's network traffic and serves the full 21,171-record table (2006–2026) in one GET, gzipped |
 | 2026-10-03 | Live-API schema mapped in `map_api_record` (canonical records pass through untouched); raw cause codes and unmapped state codes preserved, API-only fields dropped | One mapping layer keeps the canonical schema, API DB, scorecard, and map unchanged while the ingest path switches vocabulary; nothing is silently relabelled or dropped (first real run: 21,171 in → 21,171 out) |
+| 2026-10-03 | `clean_quantity` rejects NaN/inf explicitly; API seed collapses re-reported incident ids to their latest update (20,038 of 21,171 unique) | The live export contains `"nan"` volume strings — NaN parses as float and fails every < / > comparison, silently poisoning volume sums; the serving layer enforces unique incident_id while the scorecard still audits the full record, duplicates included |
 
 ## Open Questions
 

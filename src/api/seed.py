@@ -26,15 +26,27 @@ async def seed_from_geojson(filepath: Path):
         fc = json.load(f)
 
     features = fc.get("features", [])
-    print(f"Loading {len(features)} features from {filepath.name}")
+
+    # The serving layer enforces unique incident_ids, but the record itself
+    # contains re-reported incident numbers (1,133 in the first live export).
+    # Keep the LAST occurrence per id — NOSDRA's most recent update. The
+    # scorecard still audits the full record from the GeoJSON, duplicates
+    # included; the map just renders one point per incident.
+    by_id: dict[str, dict] = {}
+    for feat in features:
+        props = feat.get("properties", {})
+        incident_id = (props.get("incident_id") or "").strip()
+        if not incident_id:
+            continue
+        by_id[incident_id] = props
+    collapsed = len(features) - len(by_id)
+
+    print(f"Loading {len(by_id)} unique incidents from {filepath.name} "
+          f"({collapsed} re-reported ids collapsed to their latest update)")
 
     async with async_session_factory() as session:
         count = 0
-        for feat in features:
-            props = feat.get("properties", {})
-            if not props.get("incident_id"):
-                continue
-
+        for props in by_id.values():
             # Convert date strings to date objects
             raw_date = props.get("date")
             parsed_date = None
@@ -72,6 +84,10 @@ async def seed_from_geojson(filepath: Path):
             )
             session.add(incident)
             count += 1
+            if count % 500 == 0:
+                # Commit in batches — one 21k-row INSERT busts SQLite's
+                # bound-parameter limit.
+                await session.commit()
 
         await session.commit()
         print(f"Seeded {count} records into database")
