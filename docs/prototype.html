@@ -47,6 +47,22 @@
     z-index: 20; background: #b3261e; color: #fff; padding: 8px 16px;
     border-radius: 6px; font-size: 13px; max-width: 90%;
   }
+
+  /* Timeline scrubber */
+  #timeline {
+    position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%);
+    z-index: 10; background: rgba(17,17,17,0.9); border: 1px solid #333;
+    border-radius: 8px; padding: 10px 16px; width: min(480px, 80vw);
+  }
+  #timeline-row { display: flex; align-items: center; gap: 10px; }
+  #year-slider { flex: 1; accent-color: #ff6b35; }
+  #year-label { font-size: 13px; font-weight: 600; color: #fff; min-width: 68px; text-align: center; }
+  #timeline-toggle {
+    background: #222; color: #ccc; border: 1px solid #444; border-radius: 5px;
+    font-size: 11px; padding: 3px 8px; cursor: pointer;
+  }
+  #timeline-toggle.on { background: #ff6b35; color: #111; border-color: #ff6b35; }
+  #timeline-note { font-size: 10px; color: #888; margin-top: 4px; }
   
   @media (max-width: 640px) {
     #stats { flex-wrap: wrap; gap: 12px; padding: 10px 14px; }
@@ -75,6 +91,15 @@
 
 <div id="banner" hidden></div>
 
+<div id="timeline" hidden>
+  <div id="timeline-row">
+    <input type="range" id="year-slider" min="2006" max="2026" value="2026" step="1">
+    <span id="year-label">All years</span>
+    <button id="timeline-toggle" title="Switch between cumulative and single-year view">Single year</button>
+  </div>
+  <div id="timeline-note">Drag to scrub the spill record over time</div>
+</div>
+
 <div id="stats">
   <div class="stat"><div class="stat-value" id="stat-count">0</div><div class="stat-label">Spills</div></div>
   <div class="stat"><div class="stat-value" id="stat-spilled">0</div><div class="stat-label">Barrels spilled</div></div>
@@ -89,25 +114,118 @@
 
 const API_BASE = '/api/v1';
 
+// ── Timeline state ──────────────────────────────────────────────────────
+// allFeatures holds every drawable record; the slider re-slices it via
+// source.setData so MapLibre clustering keeps working. Two modes:
+//   cumulative — everything up to and including the slider year
+//   single     — only records from the slider year
+let allFeatures = [];
+let timelineMode = 'cumulative';   // or 'single'
+let timelineYear = null;           // null = full record (slider untouched)
+
+function filteredFeatures() {
+  if (timelineYear === null) return allFeatures;
+  return allFeatures.filter(f => {
+    const y = f.properties.year;
+    return timelineMode === 'single'
+      ? y === timelineYear
+      : (y !== null && y !== undefined && y <= timelineYear);
+  });
+}
+
+function applyTimeline() {
+  const label = document.getElementById('year-label');
+  if (timelineYear === null) {
+    label.textContent = 'All years';
+  } else {
+    label.textContent = timelineMode === 'single'
+      ? String(timelineYear)
+      : `≤ ${timelineYear}`;
+  }
+  const drawable = { type: 'FeatureCollection', features: filteredFeatures() };
+  map.getSource('spills').setData(drawable);
+  // Keep the stat panel honest: count and volume reflect what is shown.
+  let spilled = 0;
+  for (const f of filteredFeatures()) {
+    const q = f.properties.quantity_spilled;
+    if (typeof q === 'number' && isFinite(q)) spilled += q;
+  }
+  document.getElementById('stat-count').textContent =
+    filteredFeatures().length.toLocaleString();
+  document.getElementById('stat-spilled').textContent =
+    Math.round(spilled).toLocaleString();
+}
+
+function setupTimeline() {
+  const wrap = document.getElementById('timeline');
+  const slider = document.getElementById('year-slider');
+  const toggle = document.getElementById('timeline-toggle');
+
+  const years = allFeatures
+    .map(f => f.properties.year)
+    .filter(y => typeof y === 'number' && y >= 1900);
+  if (!years.length) return;  // nothing dated — keep the panel hidden
+  slider.min = Math.min(...years);
+  slider.max = Math.max(...years);
+  slider.value = slider.max;
+  wrap.hidden = false;
+
+  slider.addEventListener('input', () => {
+    timelineYear = parseInt(slider.value, 10);
+    applyTimeline();
+  });
+  toggle.addEventListener('click', () => {
+    timelineMode = timelineMode === 'cumulative' ? 'single' : 'cumulative';
+    toggle.textContent = timelineMode === 'cumulative' ? 'Single year' : 'Cumulative';
+    toggle.classList.toggle('on', timelineMode === 'single');
+    applyTimeline();
+  });
+}
+
+async function fetchAllSpills() {
+  // The API caps pages at 500; the timeline needs the whole record, so
+  // paginate by offset until we have every feature.
+  const PAGE = 500;
+  const first = await fetch(
+    `${API_BASE}/spills/geojson?limit=${PAGE}`).then(r => {
+      if (!r.ok) throw new Error(`geojson ${r.status}`);
+      return r.json();
+    });
+  const total = first.metadata?.total ?? first.features.length;
+  const pages = [first];
+  const rest = [];
+  for (let offset = PAGE; offset < total; offset += PAGE) {
+    rest.push(
+      fetch(`${API_BASE}/spills/geojson?limit=${PAGE}&offset=${offset}`)
+        .then(r => {
+          if (!r.ok) throw new Error(`geojson ${r.status}`);
+          return r.json();
+        }));
+  }
+  // Small batches keep the local API comfortable.
+  for (let i = 0; i < rest.length; i += 5) {
+    pages.push(...await Promise.all(rest.slice(i, i + 5)));
+  }
+  return { features: pages.flatMap(p => p.features) };
+}
+
 async function loadData() {
   const banner = document.getElementById('banner');
   try {
     const [geoRes, statsRes] = await Promise.all([
-      fetch(`${API_BASE}/spills/geojson?limit=500`),
+      fetchAllSpills(),
       fetch(`${API_BASE}/spills/stats`),
     ]);
-    if (!geoRes.ok || !statsRes.ok) {
-      throw new Error(`API responded ${geoRes.status}/${statsRes.status}`);
+    if (!statsRes.ok) {
+      throw new Error(`API responded ${statsRes.status}`);
     }
-    const geo = await geoRes.json();
+    const geo = geoRes;
     const stats = await statsRes.json();
 
     // Records without coordinates are kept in the data but cannot be drawn.
-    const drawable = {
-      type: 'FeatureCollection',
-      features: geo.features.filter(f => f.geometry !== null),
-    };
-    map.getSource('spills').setData(drawable);
+    allFeatures = geo.features.filter(f => f.geometry !== null);
+    map.getSource('spills').setData(
+      { type: 'FeatureCollection', features: allFeatures });
 
     document.getElementById('stat-count').textContent =
       stats.total_incidents.toLocaleString();
@@ -116,8 +234,10 @@ async function loadData() {
     document.getElementById('stat-recovered').textContent =
       `${stats.overall_recovery_pct ?? 0}%`;
 
+    setupTimeline();
+
     window.__observatoryLoaded = true;
-    window.__observatoryDrawable = drawable.features.length;
+    window.__observatoryDrawable = allFeatures.length;
   } catch (err) {
     banner.hidden = false;
     banner.textContent = `API unreachable — start it with: python -m uvicorn src.api.main:app --port 8766 (${err.message})`;
