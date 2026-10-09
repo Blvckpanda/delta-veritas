@@ -141,6 +141,16 @@ QC_SUSPICIOUS_RECOVERY_PCT = 99.9
 # Volume plausibility window (same bounds the ETL validates against).
 QC_VOLUME_PLAUSIBILITY = (MIN_VALID_SPILL_QUANTITY, MAX_SPILL_QUANTITY)
 
+# ── Weekly digest (src/etl/digest.py) ──────────────────────────────────
+# Runtime state (seen incident IDs + last run timestamp) lives in
+# DATA_PROCESSED and is machine-local — never committed.
+DIGEST_STATE_FILENAME = "digest_state.json"
+DIGEST_OUTPUT_PREFIX = "digest_"
+DIGEST_LOG_FILE = LOGS_DIR / "digest.log"
+# Occurrence window for the very first run (before any state exists).
+DIGEST_DEFAULT_WINDOW_DAYS = 7
+DIGEST_UNKNOWN_LABEL = "(unknown)"
+
 LOG_FILE = LOGS_DIR / "etl_pipeline.log"
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"

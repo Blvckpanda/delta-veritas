@@ -61,6 +61,25 @@ single-page app whose download uses the browser's File System API:
   on cleaned data (non-zero `negative`/`over_cap` buckets on cleaned output
   would indicate a cleaning regression — check it).
 
+## Part 1b — The Weekly Digest
+
+The digest answers "what changed since the last run?" in two sections:
+**newly disclosed** (incident IDs not present at the previous run — backfilled
+historic spills included) and **newly occurred** (recorded spill date inside
+the window). Grouped by state/LGA with volumes and top operators.
+
+```
+python src/etl/digest.py                 # after each weekly ETL + fetch
+python src/etl/digest.py --seed          # first ever run: baseline only, no report
+python src/etl/digest.py --since 2026-09-01   # ad-hoc occurrence window
+python src/etl/digest.py --input data/processed/nosdra_clean_X.geojson
+```
+
+It writes `data/processed/digest_<timestamp>.md`, logs to `logs/digest.log`
+(append-only), and tracks state in `data/processed/digest_state.json`
+(machine-local — never committed). A late-entered spill can appear in both
+sections; they measure different things. Delete the state file to re-baseline.
+
 ## Part 2 — The Data-Quality Scorecard
 
 Run it against the latest cleaned export:
