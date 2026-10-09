@@ -37,6 +37,8 @@
 - [x] FastAPI schema (3 models) built and seeded
 - [x] Live API fetch (`--fetch`) + API→canonical schema mapping, tested with no network
 - [x] First real export processed: 21,171 records (2006–2026), zero drops, 22.6% without coords
+- [x] Weekly digest: newly disclosed + newly occurred sections, state-tracked across runs, markdown output + tests
+- [x] Live map timeline scrubber (cumulative/single-year), verified in browser over the full 20k record
 
 ## Phase 2 — Done When
 
@@ -73,6 +75,8 @@
 | 2026-10-03 | Scripted fetch replaces manual export as the primary NOSDRA ingest path (`--fetch` hits the SPA's own unauthenticated XHR endpoint) | The manual File System API download was unreliable; the endpoint was discovered by inspecting the SPA's network traffic and serves the full 21,171-record table (2006–2026) in one GET, gzipped |
 | 2026-10-03 | Live-API schema mapped in `map_api_record` (canonical records pass through untouched); raw cause codes and unmapped state codes preserved, API-only fields dropped | One mapping layer keeps the canonical schema, API DB, scorecard, and map unchanged while the ingest path switches vocabulary; nothing is silently relabelled or dropped (first real run: 21,171 in → 21,171 out) |
 | 2026-10-03 | `clean_quantity` rejects NaN/inf explicitly; API seed collapses re-reported incident ids to their latest update (20,038 of 21,171 unique) | The live export contains `"nan"` volume strings — NaN parses as float and fails every < / > comparison, silently poisoning volume sums; the serving layer enforces unique incident_id while the scorecard still audits the full record, duplicates included |
+| 2026-10-09 | Weekly digest (`src/etl/digest.py`): two sections — newly disclosed (unseen incident IDs, catches backfills) vs newly occurred (date window) | "New" has two meanings on a messy register; a late-entered spill can appear in both. State (seen IDs + last run) is machine-local in data/processed/digest_state.json, never committed; first run reports the full record as baseline unless --seed |
+| 2026-10-09 | Map timeline slider filters client-side via source.setData with a cumulative/single-year toggle; the prototype now paginates the full API record instead of the newest 500 | Clustering stays intact because data is re-sliced, not filtered by layer; a slider over only the newest 500 incidents would misrepresent the record's timespan (2006–2026) |
 
 ## Open Questions
 
